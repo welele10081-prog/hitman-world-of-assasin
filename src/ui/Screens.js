@@ -76,6 +76,9 @@ export class Screens {
     const best = this.game.progress;
     const done = Object.values(best.challenges ?? {}).filter(Boolean).length;
     el('div', 'foot', s, `Испытаний выполнено: ${done} / 10${best.bestStars ? ` · лучший рейтинг: ${'★'.repeat(best.bestStars)}` : ''}`);
+    if (window.matchMedia && window.matchMedia('(pointer: coarse)').matches && !window.matchMedia('(any-pointer: fine)').matches) {
+      el('div', 'foot warn', s, 'Для игры нужны клавиатура и мышь: откройте страницу на компьютере.');
+    }
     el('div', 'disclaimer', s, 'Фанатская стелс-песочница. Все персонажи и события вымышлены.');
   }
 

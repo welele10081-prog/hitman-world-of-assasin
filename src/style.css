@@ -1,4 +1,5 @@
 :root {
+  color-scheme: dark;
   --accent: #d4202a;
   --accent-soft: #e84a4a;
   --gold: #f2c14e;
@@ -602,6 +603,10 @@ body {
   margin-top: 40px;
   font-size: 13px;
   color: var(--dim);
+}
+
+.foot.warn {
+  color: var(--gold);
 }
 
 .disclaimer {
