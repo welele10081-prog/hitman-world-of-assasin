@@ -187,14 +187,14 @@ export class Combat {
   npcShoot(npc, target) {
     const game = this.game;
     const d = dist2D(npc.pos, target.pos);
-    let chance = d < 5 ? 0.6 : d < 12 ? 0.42 : d < 22 ? 0.26 : 0.14;
+    let chance = d < 5 ? 0.5 : d < 12 ? 0.33 : d < 22 ? 0.2 : 0.1;
     if (target.crouching) chance *= 0.8;
     if (target.running) chance *= 0.75;
     game.audio?.play('shot', npc.pos, 1);
     game.noise(npc.pos, 40, 'gunshot', npc);
     game.effects.muzzleFlash(npc.model.boneMap.rHand);
     if (Math.random() < chance) {
-      target.takeDamage(12 + Math.random() * 6);
+      target.takeDamage(7 + Math.random() * 5);
     } else {
       const miss = new THREE.Vector3(target.pos.x + (Math.random() - 0.5) * 1.5, 0.5 + Math.random() * 1.5, target.pos.z + (Math.random() - 0.5) * 1.5);
       game.effects.impact(miss);

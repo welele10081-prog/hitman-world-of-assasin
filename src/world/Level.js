@@ -111,7 +111,8 @@ export class Level {
     const sun = new THREE.DirectionalLight(0xffb070, 2.6);
     sun.position.copy(sunDir).multiplyScalar(80);
     sun.castShadow = true;
-    sun.shadow.mapSize.set(2048, 2048);
+    const q = this.game.settings.quality;
+    sun.shadow.mapSize.set(q === 'low' ? 1024 : 2048, q === 'low' ? 1024 : 2048);
     const sc = sun.shadow.camera;
     sc.left = -38;
     sc.right = 38;
@@ -131,9 +132,10 @@ export class Level {
 
     // Lake
     const waterGeo = new THREE.PlaneGeometry(900, 500);
+    const wres = q === 'low' ? 256 : 512;
     const water = new Water(waterGeo, {
-      textureWidth: 512,
-      textureHeight: 512,
+      textureWidth: wres,
+      textureHeight: wres,
       waterNormals: this.game.materials.textures.waterNormals(),
       sunDirection: sunDir.clone(),
       sunColor: 0xffc890,
@@ -147,27 +149,8 @@ export class Level {
     scene.add(water);
     this.water = water;
 
-    // Distant mountains ringing the lake
-    const mtnMat = new THREE.MeshStandardMaterial({ color: 0x2e3a44, roughness: 1, flatShading: true });
-    const snowMat = new THREE.MeshStandardMaterial({ color: 0xb8bcc8, roughness: 0.9, flatShading: true });
-    const rnd = (i) => (Math.sin(i * 91.7) * 43758.5453) % 1;
-    for (let i = 0; i < 26; i++) {
-      const a = (i / 26) * Math.PI * 2;
-      const r = 460 + Math.abs(rnd(i)) * 200;
-      const h = 110 + Math.abs(rnd(i + 7)) * 170;
-      const g = new THREE.ConeGeometry(110 + Math.abs(rnd(i + 3)) * 90, h, 6 + (i % 3), 1);
-      const m = new THREE.Mesh(g, mtnMat);
-      m.position.set(Math.cos(a) * r, h / 2 - 12, Math.sin(a) * r + 60);
-      m.rotation.y = rnd(i + 11) * 3;
-      scene.add(m);
-      if (h > 170) {
-        const sg = new THREE.ConeGeometry((110 + Math.abs(rnd(i + 3)) * 90) * 0.3, h * 0.3, 6 + (i % 3), 1);
-        const s = new THREE.Mesh(sg, snowMat);
-        s.position.set(m.position.x, m.position.y + h * 0.36, m.position.z);
-        s.rotation.y = m.rotation.y;
-        scene.add(s);
-      }
-    }
+    // Distant mountains ringing the lake: noisy, displaced cones.
+    this._mountains(scene);
 
     // Terrain outside the estate (land north of the shore line).
     const ground = new THREE.Mesh(new THREE.PlaneGeometry(400, 200), this.game.materials.get('grass'));
@@ -181,6 +164,52 @@ export class Level {
     bank.position.set(0, -0.6, 28.5);
     bank.receiveShadow = true;
     scene.add(bank);
+  }
+
+  _mountains(scene) {
+    const mtnMat = new THREE.MeshStandardMaterial({ color: 0x3a4650, roughness: 1, flatShading: true, vertexColors: true });
+    let seed = 9;
+    const rnd = () => {
+      seed = (seed * 16807) % 2147483647;
+      return seed / 2147483647;
+    };
+    const col = new THREE.Color();
+    for (let i = 0; i < 34; i++) {
+      const a = (i / 34) * Math.PI * 2 + rnd() * 0.12;
+      const r = 470 + rnd() * 260;
+      const h = 90 + rnd() * 190;
+      const base = 120 + rnd() * 120;
+      const geo = new THREE.ConeGeometry(base, h, 9, 5);
+      const pos = geo.attributes.position;
+      const colors = new Float32Array(pos.count * 3);
+      for (let v = 0; v < pos.count; v++) {
+        const y = pos.getY(v);
+        const t = (y + h / 2) / h; // 0 bottom .. 1 top
+        const n = (Math.sin(pos.getX(v) * 0.05 + i) + Math.cos(pos.getZ(v) * 0.045 + i * 2)) * 0.5;
+        const px = pos.getX(v);
+        const pz = pos.getZ(v);
+        const jitter = Math.sin(px * 12.9898 + pz * 78.233 + i) * 43758.5453;
+        const j = jitter - Math.floor(jitter) - 0.5;
+        const k = 1 + n * 0.22 * (1 - t) + j * 0.1;
+        pos.setX(v, px * k);
+        pos.setZ(v, pz * k);
+        pos.setY(v, y + j * h * 0.06 * (1 - t));
+        // rock -> snow gradient near the peaks
+        if (t > 0.72 && h > 160) col.setRGB(0.82, 0.84, 0.88);
+        else if (t < 0.25) col.setRGB(0.2, 0.26, 0.22);
+        else col.setRGB(0.3 + n * 0.03, 0.34 + n * 0.03, 0.38);
+        colors[v * 3] = col.r;
+        colors[v * 3 + 1] = col.g;
+        colors[v * 3 + 2] = col.b;
+      }
+      geo.setAttribute('color', new THREE.BufferAttribute(colors, 3));
+      geo.computeVertexNormals();
+      const m = new THREE.Mesh(geo, mtnMat);
+      m.position.set(Math.cos(a) * r, h / 2 - 14, Math.sin(a) * r + 80);
+      m.rotation.y = rnd() * 3;
+      m.scale.set(1, 1, 0.8 + rnd() * 0.5);
+      scene.add(m);
+    }
   }
 
   buildNav() {

@@ -439,8 +439,10 @@ export const Props = {
       const [wx, wz] = p.tp(sx * 0.85, sz);
       b.mesh(new THREE.CylinderGeometry(0.33, 0.33, 0.25, 14), 'tire', wx, 0.33, wz, { rotZ: Math.PI / 2, rotY: rot });
     }
-    p.box(0.6, 0.6, 2.31, 0.3, 0.12, 0.02, 'lampGlow', NC);
-    p.box(-0.6, 0.6, 2.31, 0.3, 0.12, 0.02, 'lampGlow', NC);
+    p.box(0.6, 0.6, 2.31, 0.3, 0.12, 0.02, 'carLight', NC);
+    p.box(-0.6, 0.6, 2.31, 0.3, 0.12, 0.02, 'carLight', NC);
+    p.box(0.6, 0.6, -2.31, 0.3, 0.1, 0.02, 'flowerRed', NC);
+    p.box(-0.6, 0.6, -2.31, 0.3, 0.1, 0.02, 'flowerRed', NC);
     const [ww, dd] = p.dims(1.9, 4.7);
     b.collision.addBox(x - ww / 2, z - dd / 2, x + ww / 2, z + dd / 2, { h: 1.5, sight: true });
   },

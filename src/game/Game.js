@@ -296,7 +296,8 @@ export class Game {
   frame(ts) {
     this.clock.update(ts);
     const dt = Math.min(this.clock.getDelta(), 0.05);
-    if (this.state === 'playing') this.update(dt);
+    if (this.state === 'map' && (this.input.pressed('Tab') || this.input.pressed('KeyM'))) this.closeMap();
+    else if (this.state === 'playing') this.update(dt);
     else if (this.state === 'title' || this.state === 'loading') this.titleCamera(dt);
     else if (this.state === 'paused' || this.state === 'map' || this.state === 'ended') {
       /* frozen */
@@ -424,9 +425,9 @@ export class Game {
     if (this.frameTimes.length < 240) return;
     const avg = this.frameTimes.reduce((a, b) => a + b, 0) / this.frameTimes.length;
     this.qualityChecked = true;
-    if (avg > 0.03 && this.renderer.gtao) {
-      this.renderer.gtao.enabled = false;
-      this.hud.toast('Затенение GTAO отключено для плавности (Настройки → Качество)');
+    if (avg > 0.03) {
+      this.renderer.degrade();
+      this.hud.toast('Графика упрощена для плавности. Качество можно сменить в настройках.');
     }
   }
 }

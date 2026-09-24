@@ -58,7 +58,8 @@ export class Renderer {
   constructor(container, quality = 'high') {
     this.container = container;
     this.renderer = new THREE.WebGLRenderer({ antialias: false, powerPreference: 'high-performance' });
-    this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, 1.5));
+    const pr = quality === 'high' ? Math.min(window.devicePixelRatio, 1.5) : quality === 'medium' ? 1 : 0.8;
+    this.renderer.setPixelRatio(pr);
     this.renderer.shadowMap.enabled = true;
     this.renderer.shadowMap.type = THREE.PCFShadowMap;
     this.renderer.toneMapping = THREE.ACESFilmicToneMapping;
@@ -88,8 +89,8 @@ export class Renderer {
       composer.addPass(this.gtao);
     }
 
-    this.bloom = new UnrealBloomPass(new THREE.Vector2(w, h), 0.22, 0.5, 0.95);
-    composer.addPass(this.bloom);
+    this.bloom = new UnrealBloomPass(new THREE.Vector2(w / 2, h / 2), 0.22, 0.5, 0.95);
+    if (this.quality !== 'low') composer.addPass(this.bloom);
     composer.addPass(new OutputPass());
     this.grade = new ShaderPass(GradeShader);
     composer.addPass(this.grade);
@@ -98,6 +99,13 @@ export class Renderer {
       composer.addPass(this.smaa);
     }
     this.composer = composer;
+    this.resize();
+  }
+
+  // Drop the most expensive effects at runtime (used by auto-quality).
+  degrade() {
+    if (this.gtao) this.gtao.enabled = false;
+    this.renderer.setPixelRatio(1);
     this.resize();
   }
 

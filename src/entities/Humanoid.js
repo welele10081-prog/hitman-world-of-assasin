@@ -38,7 +38,7 @@ function prim(name) {
   let g;
   switch (name) {
     case 'sphere':
-      g = new THREE.SphereGeometry(1, 14, 10);
+      g = new THREE.SphereGeometry(1, 16, 12);
       break;
     case 'sphereLow':
       g = new THREE.SphereGeometry(1, 8, 6);
@@ -119,6 +119,34 @@ class PartCollector {
   }
 }
 
+// Smooth body-of-revolution shapes (torso, pelvis, jacket skirt, skirts).
+function lathe(key, profile, segments = 16, open = false) {
+  const k = `lathe:${key}`;
+  if (PRIM[k]) return PRIM[k];
+  const pts = profile.map(([r, y]) => new THREE.Vector2(Math.max(0.0001, r), y));
+  let g = new THREE.LatheGeometry(pts, segments);
+  g = g.toNonIndexed();
+  for (const a of Object.keys(g.attributes)) if (a !== 'position' && a !== 'normal') g.deleteAttribute(a);
+  PRIM[k] = g;
+  return g;
+}
+
+const SHAPES = {
+  // chest (chest bone space): from mid-torso up to the neck base
+  chestM: [[0.0, -0.04], [0.165, -0.04], [0.178, 0.04], [0.19, 0.13], [0.2, 0.2], [0.17, 0.245], [0.1, 0.27], [0.0, 0.275]],
+  chestF: [[0.0, -0.04], [0.14, -0.04], [0.148, 0.04], [0.16, 0.12], [0.165, 0.19], [0.14, 0.235], [0.085, 0.26], [0.0, 0.265]],
+  // abdomen (spine bone space)
+  bellyM: [[0.0, -0.02], [0.155, -0.02], [0.15, 0.08], [0.158, 0.18], [0.17, 0.27], [0.0, 0.27]],
+  bellyF: [[0.0, -0.02], [0.145, -0.02], [0.125, 0.1], [0.132, 0.18], [0.145, 0.27], [0.0, 0.27]],
+  // pelvis (hips bone space)
+  pelvisM: [[0.0, -0.13], [0.12, -0.13], [0.165, -0.06], [0.17, 0.02], [0.158, 0.1], [0.0, 0.1]],
+  pelvisF: [[0.0, -0.13], [0.13, -0.13], [0.185, -0.05], [0.18, 0.03], [0.15, 0.1], [0.0, 0.1]],
+  // suit jacket flaring over the hips
+  skirtJacket: [[0.172, 0.06], [0.178, -0.04], [0.186, -0.16]],
+  skirtShort: [[0.15, 0.08], [0.2, -0.1], [0.26, -0.42]],
+  skirtLong: [[0.15, 0.08], [0.21, -0.15], [0.3, -0.6], [0.34, -0.86]],
+};
+
 // Build geometry for an outfit + appearance.
 function buildBodyGeometry(boneWorld, outfitId, look) {
   const o = OUTFITS[outfitId];
@@ -133,156 +161,166 @@ function buildBodyGeometry(boneWorld, outfitId, look) {
   const sleeve = style === 'vest' ? o.shirt : dress || under ? skin : o.jacket;
   const thighCol = dress ? skin : o.pants;
   const shinCol = dress || under ? skin : o.pants;
-  const shoulderW = female ? 0.36 : 0.42;
-  const hipW = female ? 0.36 : 0.34;
   const bw = look.build ?? 1;
+  const depth = 0.66;
+  const F = female ? 'F' : 'M';
 
-  // Pelvis + belt
-  P.add('hips', prim('rbox'), under ? o.pants : dress ? o.dress : o.pants, [0, 0, 0], [hipW * bw, 0.22, 0.21]);
-  if (!dress && !under && style !== 'chef' && style !== 'overalls') P.add('hips', prim('box'), 0x1a1612, [0, 0.085, 0], [hipW * bw + 0.01, 0.035, 0.215]);
-  // Abdomen / chest
-  P.add('spine', prim('rbox'), under ? skin : torsoCol, [0, 0.12, 0], [(shoulderW - 0.06) * bw, 0.24, 0.2]);
-  if (under) P.add('spine', prim('rbox'), o.jacket, [0, 0.1, 0], [(shoulderW - 0.07) * bw, 0.2, 0.205]);
-  P.add('chest', prim('rbox'), torsoCol, [0, 0.1, 0], [shoulderW * bw, 0.3, 0.24]);
+  // --- torso ---------------------------------------------------------------
+  const pelvisCol = dress ? o.dress : o.pants;
+  P.add('hips', lathe(`pelvis${F}`, SHAPES[`pelvis${F}`]), pelvisCol, [0, 0, 0], [bw, 1, depth * 1.05]);
+  const bellyCol = under ? o.jacket : torsoCol;
+  P.add('spine', lathe(`belly${F}`, SHAPES[`belly${F}`]), bellyCol, [0, 0, 0], [bw, 1, depth]);
+  P.add('chest', lathe(`chest${F}`, SHAPES[`chest${F}`]), under ? o.jacket : torsoCol, [0, 0, 0], [bw * 1.02, 1, depth * 0.98]);
+  if (under) {
+    // bare shoulders around the vest
+    P.add('chest', prim('sphere'), skin, [0.13, 0.2, 0], [0.07, 0.05, 0.08]);
+    P.add('chest', prim('sphere'), skin, [-0.13, 0.2, 0], [0.07, 0.05, 0.08]);
+  }
+  const frontZ = 0.2 * depth * 0.98;
+  if (style === 'suit' || style === 'tactical' || style === 'overalls' || style === 'chef') {
+    if (style !== 'overalls') P.add('hips', lathe('skirtJacket', SHAPES.skirtJacket, 16, true), torsoCol, [0, 0, 0], [bw, 1, depth * 1.08]);
+  }
+  if (style !== 'chef' && style !== 'overalls' && !dress && !under) {
+    P.add('hips', prim('cyl'), 0x151210, [0, 0.07, 0], [0.168 * bw, 0.035, 0.168 * depth * 1.06 * bw]);
+  }
+
   if (female && dress) {
-    P.add('chest', prim('sphereLow'), torsoCol, [0.065, 0.06, 0.1], [0.075, 0.07, 0.06]);
-    P.add('chest', prim('sphereLow'), torsoCol, [-0.065, 0.06, 0.1], [0.075, 0.07, 0.06]);
-    // neckline
-    P.add('chest', prim('box'), skin, [0, 0.2, 0.108], [0.2, 0.1, 0.03]);
-    P.add('chest', prim('box'), skin, [0, 0.245, 0], [shoulderW * bw * 0.9, 0.012, 0.18]);
-    if (o.necklace) P.add('chest', prim('box'), 0xe8d8a0, [0, 0.19, 0.125], [0.12, 0.012, 0.01]);
+    P.add('chest', prim('sphere'), torsoCol, [0.062, 0.1, 0.07], [0.068, 0.07, 0.06]);
+    P.add('chest', prim('sphere'), torsoCol, [-0.062, 0.1, 0.07], [0.068, 0.07, 0.06]);
+    // neckline & shoulders
+    P.add('chest', prim('sphere'), skin, [0, 0.22, 0.045], [0.1, 0.05, 0.05]);
+    P.add('chest', prim('sphere'), skin, [0.11, 0.225, 0], [0.065, 0.035, 0.07]);
+    P.add('chest', prim('sphere'), skin, [-0.11, 0.225, 0], [0.065, 0.035, 0.07]);
+    if (o.necklace) P.add('chest', prim('box'), 0xe8d8a0, [0, 0.21, 0.09], [0.1, 0.012, 0.012]);
+    P.add('hips', lathe(o.long ? 'skirtLong' : 'skirtShort', o.long ? SHAPES.skirtLong : SHAPES.skirtShort, 18, true), o.dress, [0, 0, 0], [1, 1, 0.85]);
   }
 
   if (style === 'suit' || style === 'vest') {
-    // Shirt V, lapels, tie
-    P.add('chest', prim('box'), o.shirt, [0, 0.14, 0.117], [0.11, 0.22, 0.012], [0, 0, 0]);
+    // shirt V, lapels, tie
+    P.add('chest', prim('box'), o.shirt, [0, 0.17, frontZ - 0.004], [0.1, 0.16, 0.02]);
     if (style === 'suit') {
-      P.add('chest', prim('box'), o.lapel ?? torsoCol, [0.068, 0.12, 0.122], [0.045, 0.24, 0.012], [0, 0, 0.32]);
-      P.add('chest', prim('box'), o.lapel ?? torsoCol, [-0.068, 0.12, 0.122], [0.045, 0.24, 0.012], [0, 0, -0.32]);
+      P.add('chest', prim('box'), o.lapel ?? torsoCol, [0.058, 0.14, frontZ + 0.002], [0.04, 0.2, 0.012], [-0.08, 0, 0.36]);
+      P.add('chest', prim('box'), o.lapel ?? torsoCol, [-0.058, 0.14, frontZ + 0.002], [0.04, 0.2, 0.012], [-0.08, 0, -0.36]);
     }
     if (o.bowtie) {
-      P.add('chest', prim('box'), o.tie ?? 0x101010, [0, 0.22, 0.127], [0.08, 0.03, 0.02]);
+      P.add('chest', prim('box'), o.tie ?? 0x101010, [0, 0.23, frontZ + 0.01], [0.075, 0.028, 0.02]);
     } else if (o.tie !== undefined) {
-      P.add('chest', prim('box'), o.tie, [0, 0.08, 0.125], [0.045, 0.3, 0.012]);
+      P.add('chest', prim('box'), o.tie, [0, 0.12, frontZ + 0.006], [0.042, 0.24, 0.012]);
     }
-    if (o.pocketSquare) P.add('chest', prim('box'), o.pocketSquare, [0.12, 0.13, 0.122], [0.05, 0.03, 0.01]);
-    // collar
-    P.add('neck', prim('cyl'), o.shirt, [0, -0.01, 0.005], [0.065, 0.05, 0.065]);
-    // buttons
-    P.add('spine', prim('sphereLow'), 0x0e0e0e, [0, 0.16, 0.101], 0.009);
-    P.add('spine', prim('sphereLow'), 0x0e0e0e, [0, 0.06, 0.101], 0.009);
+    if (o.pocketSquare) P.add('chest', prim('box'), o.pocketSquare, [0.1, 0.12, frontZ], [0.045, 0.025, 0.012]);
+    P.add('neck', prim('cyl'), o.shirt, [0, -0.005, 0.004], [0.062, 0.05, 0.058]);
+    P.add('spine', prim('sphereLow'), 0x101010, [0, 0.2, 0.108], 0.008);
+    P.add('spine', prim('sphereLow'), 0x101010, [0, 0.1, 0.103], 0.008);
   } else if (style === 'chef') {
     for (let i = 0; i < 3; i++) {
-      P.add('chest', prim('sphereLow'), 0x202020, [0.06, 0.16 - i * 0.08, 0.121], 0.012);
-      P.add('chest', prim('sphereLow'), 0x202020, [-0.06, 0.16 - i * 0.08, 0.121], 0.012);
+      P.add('chest', prim('sphereLow'), 0x202020, [0.055, 0.16 - i * 0.07, frontZ + 0.004], 0.011);
+      P.add('chest', prim('sphereLow'), 0x202020, [-0.055, 0.16 - i * 0.07, frontZ + 0.004], 0.011);
     }
-    P.add('neck', prim('cyl'), o.neckerchief ?? o.jacket, [0, -0.01, 0.005], [0.07, 0.05, 0.07]);
+    P.add('neck', prim('cyl'), o.neckerchief ?? o.jacket, [0, -0.005, 0.004], [0.066, 0.05, 0.062]);
   } else if (style === 'overalls') {
-    P.add('chest', prim('box'), o.pants, [0, 0.03, 0.118], [0.22, 0.18, 0.012]);
-    P.add('chest', prim('box'), o.pants, [0.08, 0.14, 0.118], [0.035, 0.2, 0.012]);
-    P.add('chest', prim('box'), o.pants, [-0.08, 0.14, 0.118], [0.035, 0.2, 0.012]);
-    P.add('neck', prim('cyl'), o.shirt, [0, -0.01, 0.005], [0.066, 0.05, 0.066]);
+    P.add('chest', prim('box'), o.pants, [0, 0.04, frontZ], [0.2, 0.16, 0.012]);
+    P.add('chest', prim('box'), o.pants, [0.07, 0.15, frontZ], [0.03, 0.18, 0.012]);
+    P.add('chest', prim('box'), o.pants, [-0.07, 0.15, frontZ], [0.03, 0.18, 0.012]);
+    P.add('neck', prim('cyl'), o.shirt, [0, -0.005, 0.004], [0.062, 0.05, 0.058]);
   } else if (style === 'tactical') {
-    P.add('chest', prim('rbox'), o.vestTac, [0, 0.07, 0], [shoulderW * bw + 0.04, 0.3, 0.28]);
-    P.add('spine', prim('rbox'), o.vestTac, [0, 0.14, 0], [(shoulderW - 0.03) * bw, 0.2, 0.25]);
-    P.add('neck', prim('cyl'), o.shirt, [0, -0.01, 0.005], [0.066, 0.05, 0.066]);
+    P.add('chest', prim('rbox'), o.vestTac, [0, 0.08, 0], [0.38 * bw, 0.28, 0.27]);
+    P.add('spine', prim('rbox'), o.vestTac, [0, 0.17, 0], [0.33 * bw, 0.18, 0.24]);
+    P.add('neck', prim('cyl'), o.shirt, [0, -0.005, 0.004], [0.062, 0.05, 0.058]);
   }
   if (o.apron !== undefined) {
-    P.add('hips', prim('box'), o.apron, [0, -0.2, 0.115], [0.34, 0.6, 0.015]);
-    if (style === 'chef') P.add('spine', prim('box'), o.apron, [0, 0.13, 0.103], [0.28, 0.26, 0.012]);
-  }
-  if (o.vestTac === undefined && style === 'vest') {
-    // vest shows shirt at shoulders
-    P.add('chest', prim('box'), o.shirt, [0, 0.235, 0], [shoulderW * bw * 0.95, 0.03, 0.2]);
+    P.add('hips', prim('box'), o.apron, [0, -0.25, 0.12], [0.32, 0.62, 0.012]);
+    if (style === 'chef') P.add('spine', prim('box'), o.apron, [0, 0.14, 0.108], [0.26, 0.24, 0.01]);
   }
 
-  // Neck & head
-  P.add('neck', prim('cyl'), skin, [0, 0.04, 0], [0.052, 0.12, 0.052]);
-  const hs = female ? 0.105 : 0.112;
-  P.add('head', prim('sphere'), skin, [0, 0.1, 0.005], [hs * 0.9, hs * 1.08, hs]);
-  P.add('head', prim('rbox'), skin, [0, 0.045, 0.03], [hs * 1.3, 0.08, hs * 1.3]); // jaw
-  P.add('head', prim('box'), skin, [0, 0.09, hs + 0.005], [0.028, 0.05, 0.035], [0.2, 0, 0]); // nose
-  P.add('head', prim('sphereLow'), skin, [hs * 0.92, 0.1, 0], [0.018, 0.03, 0.022]);
-  P.add('head', prim('sphereLow'), skin, [-hs * 0.92, 0.1, 0], [0.018, 0.03, 0.022]);
-  P.add('head', prim('sphereLow'), 0x141210, [0.037, 0.118, hs * 0.86], 0.012);
-  P.add('head', prim('sphereLow'), 0x141210, [-0.037, 0.118, hs * 0.86], 0.012);
-  if (look.hairStyle !== 'bald') P.add('head', prim('box'), hair, [0.037, 0.142, hs * 0.9], [0.036, 0.008, 0.01]);
-  if (look.hairStyle !== 'bald') P.add('head', prim('box'), hair, [-0.037, 0.142, hs * 0.9], [0.036, 0.008, 0.01]);
-  P.add('head', prim('box'), female ? 0x9a4a4a : 0xa07060, [0, 0.055, hs * 0.93], [0.04, 0.008, 0.01]); // mouth
+  // --- neck & head -------------------------------------------------------------
+  P.add('neck', prim('cyl'), skin, [0, 0.045, 0], [0.05, 0.12, 0.048]);
+  const hs = female ? 0.104 : 0.11;
+  P.add('head', prim('sphere'), skin, [0, 0.105, 0], [hs * 0.86, hs * 1.06, hs * 0.98]); // cranium
+  P.add('head', prim('sphere'), skin, [0, 0.055, 0.022], [hs * 0.7, hs * 0.62, hs * 0.78]); // jaw / cheeks
+  P.add('head', prim('sphereLow'), skin, [0, 0.022, 0.052], [hs * 0.34, hs * 0.26, hs * 0.34]); // chin
+  P.add('head', prim('box'), skin, [0, 0.09, hs * 0.97], [0.022, 0.042, 0.03], [0.25, 0, 0]); // nose
+  P.add('head', prim('sphereLow'), skin, [hs * 0.86, 0.1, -0.005], [0.016, 0.028, 0.02]);
+  P.add('head', prim('sphereLow'), skin, [-hs * 0.86, 0.1, -0.005], [0.016, 0.028, 0.02]);
+  P.add('head', prim('sphereLow'), 0xf0ece4, [0.034, 0.118, hs * 0.86], [0.015, 0.009, 0.006]);
+  P.add('head', prim('sphereLow'), 0xf0ece4, [-0.034, 0.118, hs * 0.86], [0.015, 0.009, 0.006]);
+  P.add('head', prim('sphereLow'), 0x1c1612, [0.034, 0.118, hs * 0.89], 0.0075);
+  P.add('head', prim('sphereLow'), 0x1c1612, [-0.034, 0.118, hs * 0.89], 0.0075);
+  const brow = look.hairStyle === 'bald' ? skin : hair;
+  P.add('head', prim('box'), brow, [0.035, 0.14, hs * 0.9], [0.034, 0.007, 0.01], [0, 0, 0.08]);
+  P.add('head', prim('box'), brow, [-0.035, 0.14, hs * 0.9], [0.034, 0.007, 0.01], [0, 0, -0.08]);
+  P.add('head', prim('box'), female ? 0xa04a50 : 0x9a6a5c, [0, 0.052, hs * 0.86], [0.036, 0.007, 0.01]);
 
   // Hair
   const hsStyle = look.hairStyle;
-  if (hsStyle !== 'bald' && !o.hat) {
-    P.add('head', prim('hemi'), hair, [0, 0.105, -0.004], [hs * 0.97, hs * 1.12, hs * 1.06], [-0.25, 0, 0]);
-    if (hsStyle === 'long') {
-      P.add('head', prim('rbox'), hair, [0, 0.02, -0.075], [0.22, 0.32, 0.08]);
-    } else if (hsStyle === 'bun') {
-      P.add('head', prim('sphereLow'), hair, [0, 0.2, -0.085], 0.05);
-    } else if (hsStyle === 'bob') {
-      P.add('head', prim('rbox'), hair, [0, 0.06, -0.03], [0.24, 0.16, 0.2]);
-    } else if (hsStyle === 'ponytail') {
-      P.add('head', prim('sphereLow'), hair, [0, 0.14, -0.12], [0.04, 0.12, 0.04], [0.6, 0, 0]);
+  if (hsStyle !== 'bald') {
+    const capScale = o.hat ? [hs * 0.9, hs * 0.85, hs * 1.0] : [hs * 0.93, hs * 1.02, hs * 1.04];
+    P.add('head', prim('hemi'), hair, [0, 0.112, -0.008], capScale, [-0.38, 0, 0]);
+    // back of the head
+    P.add('head', prim('sphere'), hair, [0, 0.085, -0.035], [hs * 0.84, hs * 0.72, hs * 0.72]);
+    if (!o.hat) {
+      if (hsStyle === 'long') P.add('head', prim('rbox'), hair, [0, 0.0, -0.07], [0.19, 0.3, 0.07]);
+      else if (hsStyle === 'bun') P.add('head', prim('sphere'), hair, [0, 0.18, -0.09], 0.045);
+      else if (hsStyle === 'bob') P.add('head', prim('sphere'), hair, [0, 0.07, -0.02], [hs * 1.02, hs * 0.72, hs * 1.0]);
+      else if (hsStyle === 'ponytail') P.add('head', prim('sphere'), hair, [0, 0.12, -0.13], [0.035, 0.11, 0.035], [0.7, 0, 0]);
+      else if (hsStyle === 'slick') P.add('head', prim('sphere'), hair, [0, 0.16, 0.0], [hs * 0.8, hs * 0.35, hs * 0.95]);
     }
-  } else if (hsStyle !== 'bald' && o.hat) {
-    P.add('head', prim('hemi'), hair, [0, 0.085, -0.01], [hs * 0.98, hs * 0.9, hs * 1.05], [-0.3, 0, 0]);
   }
-  if (look.beard) {
-    P.add('head', prim('rbox'), hair, [0, 0.035, 0.05], [0.15, 0.07, 0.12]);
-  }
-  if (look.mustache) P.add('head', prim('box'), hair, [0, 0.068, hs * 0.95], [0.06, 0.014, 0.012]);
+  if (look.beard) P.add('head', prim('sphere'), hair, [0, 0.045, 0.03], [hs * 0.72, hs * 0.5, hs * 0.76]);
+  if (look.mustache) P.add('head', prim('box'), hair, [0, 0.066, hs * 0.9], [0.055, 0.013, 0.012]);
 
   // Headwear
   if (o.hat === 'toque') {
-    P.add('head', prim('cyl'), 0xf6f6f4, [0, 0.25, 0], [0.105, 0.14, 0.105]);
-    P.add('head', prim('sphereLow'), 0xf6f6f4, [0, 0.34, 0], [0.13, 0.07, 0.13]);
+    P.add('head', prim('cyl'), 0xf6f6f4, [0, 0.24, -0.005], [0.1, 0.13, 0.1]);
+    P.add('head', prim('sphere'), 0xf6f6f4, [0, 0.32, -0.005], [0.125, 0.07, 0.125]);
   } else if (o.hat === 'bucket') {
-    P.add('head', prim('cyl'), o.hatColor, [0, 0.2, 0], [0.16, 0.015, 0.16]);
-    P.add('head', prim('cyl'), o.hatColor, [0, 0.245, 0], [0.11, 0.09, 0.11]);
+    P.add('head', prim('cyl'), o.hatColor, [0, 0.19, 0], [0.155, 0.012, 0.155]);
+    P.add('head', prim('cyl'), o.hatColor, [0, 0.235, 0], [0.105, 0.085, 0.105]);
   }
   if (o.cap !== undefined) {
-    P.add('head', prim('hemi'), o.cap, [0, 0.14, 0], [0.118, 0.1, 0.122]);
-    P.add('head', prim('box'), o.cap, [0, 0.16, 0.12], [0.16, 0.012, 0.09], [-0.15, 0, 0]);
+    P.add('head', prim('hemi'), o.cap, [0, 0.135, 0], [0.112, 0.1, 0.118]);
+    P.add('head', prim('box'), o.cap, [0, 0.155, 0.115], [0.15, 0.012, 0.085], [-0.18, 0, 0]);
   }
   if (o.glasses === 'shades') {
-    P.add('head', prim('box'), 0x050505, [0, 0.12, hs * 0.93], [0.13, 0.03, 0.012]);
+    P.add('head', prim('box'), 0x050505, [0.034, 0.118, hs * 0.94], [0.045, 0.028, 0.008]);
+    P.add('head', prim('box'), 0x050505, [-0.034, 0.118, hs * 0.94], [0.045, 0.028, 0.008]);
+    P.add('head', prim('box'), 0x050505, [0, 0.124, hs * 0.94], [0.03, 0.006, 0.008]);
   } else if (o.glasses === 'round') {
-    P.add('head', prim('cyl'), 0x2a2018, [0.037, 0.12, hs * 0.95], [0.022, 0.005, 0.022], [Math.PI / 2, 0, 0]);
-    P.add('head', prim('cyl'), 0x2a2018, [-0.037, 0.12, hs * 0.95], [0.022, 0.005, 0.022], [Math.PI / 2, 0, 0]);
+    P.add('head', prim('cyl'), 0x2a2018, [0.034, 0.118, hs * 0.95], [0.021, 0.004, 0.021], [Math.PI / 2, 0, 0]);
+    P.add('head', prim('cyl'), 0x2a2018, [-0.034, 0.118, hs * 0.95], [0.021, 0.004, 0.021], [Math.PI / 2, 0, 0]);
   }
-  if (o.earpiece) P.add('head', prim('sphereLow'), 0x0a0a0a, [-hs * 0.98, 0.09, 0.01], 0.014);
+  if (o.earpiece) P.add('head', prim('sphereLow'), 0x0a0a0a, [-hs * 0.9, 0.09, 0.012], 0.012);
 
-  // Arms
+  // --- arms ----------------------------------------------------------------
   const handCol = o.gloves ?? skin;
+  const armR = female ? 0.9 : 1;
   for (const side of ['l', 'r']) {
     const sx = side === 'l' ? 1 : -1;
-    P.add(`${side}UpperArm`, prim('sphereLow'), torsoCol === undefined ? sleeve : dress ? skin : under ? skin : torsoCol, [0, -0.02, 0], [0.07, 0.07, 0.075]);
-    P.add(`${side}UpperArm`, capsule(0.052, 0.18), sleeve, [0, -0.14, 0], 1);
-    P.add(`${side}Forearm`, capsule(0.045, 0.16), sleeve, [0, -0.12, 0], 1);
-    if (style === 'suit') P.add(`${side}Forearm`, prim('cyl'), o.shirt, [0, -0.225, 0], [0.047, 0.03, 0.047]);
-    P.add(`${side}Hand`, prim('rbox'), handCol, [0, -0.055, 0.005], [0.065, 0.1, 0.035]);
-    P.add(`${side}Hand`, prim('rbox'), handCol, [sx * -0.032, -0.03, 0.02], [0.025, 0.06, 0.025], [0, 0, sx * 0.4]);
+    const shoulderCol = dress || under ? skin : torsoCol;
+    P.add(`${side}UpperArm`, prim('sphere'), shoulderCol, [-sx * 0.012, -0.015, 0], [0.068 * armR, 0.065, 0.07 * armR]);
+    P.add(`${side}UpperArm`, capsule(0.048 * armR, 0.19), sleeve, [0, -0.14, 0], 1);
+    P.add(`${side}Forearm`, capsule(0.041 * armR, 0.17), sleeve, [0, -0.12, 0], 1);
+    if (style === 'suit' || style === 'vest') P.add(`${side}Forearm`, prim('cyl'), o.shirt, [0, -0.222, 0], [0.043 * armR, 0.028, 0.043 * armR]);
+    P.add(`${side}Hand`, prim('sphere'), handCol, [0, -0.05, 0.004], [0.034 * armR, 0.058, 0.02]);
+    P.add(`${side}Hand`, prim('sphereLow'), handCol, [sx * -0.028, -0.035, 0.016], [0.012, 0.03, 0.012], [0, 0, sx * 0.5]);
   }
 
-  // Legs
+  // --- legs ----------------------------------------------------------------
   for (const side of ['l', 'r']) {
-    P.add(`${side}Thigh`, capsule(female && dress ? 0.066 : 0.076, 0.3), thighCol, [0, -0.21, 0], 1);
-    P.add(`${side}Shin`, capsule(female && dress ? 0.05 : 0.06, 0.32), shinCol, [0, -0.21, 0], 1);
+    const thighR = female && dress ? 0.064 : 0.074;
+    P.add(`${side}Thigh`, capsule(thighR, 0.3), thighCol, [0, -0.21, 0], 1);
+    P.add(`${side}Shin`, capsule(female && dress ? 0.047 : 0.057, 0.33), shinCol, [0, -0.21, 0], 1);
     if (female && dress) {
-      P.add(`${side}Foot`, prim('rbox'), o.shoes, [0, -0.02, 0.04], [0.075, 0.06, 0.2], [0.12, 0, 0]);
+      P.add(`${side}Foot`, prim('rbox'), o.shoes, [0, -0.025, 0.035], [0.065, 0.05, 0.19], [0.14, 0, 0]);
     } else {
-      P.add(`${side}Foot`, prim('rbox'), o.shoes, [0, -0.012, 0.045], [0.1, 0.075, 0.25]);
+      P.add(`${side}Foot`, prim('rbox'), o.shoes, [0, -0.015, 0.045], [0.095, 0.07, 0.25]);
+      P.add(`${side}Foot`, prim('sphere'), o.shoes, [0, -0.02, 0.15], [0.048, 0.035, 0.05]);
     }
   }
   if (under) {
-    P.add('lThigh', prim('cyl'), o.pants, [0, -0.08, 0], [0.085, 0.14, 0.085]);
-    P.add('rThigh', prim('cyl'), o.pants, [0, -0.08, 0], [0.085, 0.14, 0.085]);
+    P.add('lThigh', prim('cyl'), o.pants, [0, -0.07, 0], [0.082, 0.14, 0.082]);
+    P.add('rThigh', prim('cyl'), o.pants, [0, -0.07, 0], [0.082, 0.14, 0.082]);
   }
-  if (dress) {
-    const h = o.long ? 0.9 : 0.5;
-    P.add('hips', prim('cone'), o.dress, [0, 0.07 - h / 2, 0], [0.33, h, 0.27]);
-  }
-  const merged = mergeGeometries(P.geos, false);
-  return merged;
+  return mergeGeometries(P.geos, false);
 }
 
 const bodyMaterial = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.72, metalness: 0.02 });

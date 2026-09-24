@@ -547,6 +547,7 @@ export class NPC extends Character {
     }
     if (this.awareness >= 0.25 && (this.state === 'routine' || this.state === 'distracted' || this.state === 'investigate')) {
       this.setState('suspicious');
+      game.audio?.play('notice');
       if (r === 'trespass') this.bark('trespassWarn', true);
       else if (r === 'hostile') this.bark('hostile', true);
       else if (r === 'weapon') this.bark('weapon', true);
@@ -822,7 +823,7 @@ export class NPC extends Character {
       else if (d < 12 && this.moving) this.stopMoving();
       this.fireTimer -= dt;
       if (this.fireTimer <= 0 && d < 35) {
-        this.fireTimer = 0.9 + Math.random() * 0.7;
+        this.fireTimer = 1.0 + Math.random() * 0.8;
         game.combat.npcShoot(this, pl);
       }
       this.lostTimer = 0;
